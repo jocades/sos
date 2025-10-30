@@ -62,13 +62,12 @@
     console.log("Start oscillator");
   }
 
-  function tone(value: number, max: number) {
+  function tone(bar: Bar) {
     if (audioCtx.state !== "running") return;
 
     const now = audioCtx.currentTime;
 
-    const freq = 200 + (value / max) * 800;
-    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.setValueAtTime(bar.freq, now);
 
     let duration = 0.05;
     if (state.delay >= 50) duration = 0.1;
@@ -80,12 +79,19 @@
     gain.gain.setValueAtTime(0, now + duration);
   }
 
-  function createBars(length: number) {
-    console.log("create bars");
-    return Array.from({ length }, (_, i) => i + 1);
+  interface Bar {
+    value: number;
+    freq: number;
   }
 
-  let bars: number[] = [];
+  function createBars(length: number) {
+    return Array.from({ length }, (_, i) => ({
+      value: i + 1,
+      freq: 200 + ((i + 1) / length) * 800,
+    }));
+  }
+
+  let bars: Bar[] = [];
 
   $effect(() => {
     bars = createBars(state.size);
@@ -126,7 +132,7 @@
     const barWidth = (w - (bars.length - 1) * gap) / bars.length;
 
     for (let i = 0; i < bars.length; i++) {
-      const barHeight = (bars[i] / bars.length) * h;
+      const barHeight = (bars[i].value / bars.length) * h;
       ctx.fillStyle = hls?.includes(i) ? "skyblue" : "gray";
       ctx.fillRect(i * (barWidth + gap), h - barHeight, barWidth, barHeight);
     }
@@ -138,37 +144,38 @@
     }
   }
 
-  function* bubble() {
+  type SortGenerator = Generator<{ access: number[]; sound: number[] }>;
+
+  function progress(access: number[], sound: number[]) {
+    return { access, sound };
+  }
+
+  function* bubble(): SortGenerator {
     for (let i = 0; i < bars.length; i++) {
       for (let j = 0; j < bars.length - i - 1; j++) {
-        yield { access: [j, j + 1], sound: j + 1 };
-        if (bars[j] > bars[j + 1]) {
+        // yield { access: [j, j + 1], sound: [j + 1] };
+        yield progress([j, j + 1], [j + 1]);
+        if (bars[j].value > bars[j + 1].value) {
           swap(bars, j, j + 1);
         }
       }
     }
   }
 
-  function* insertion() {
+  function* insertion(): SortGenerator {
     for (let i = 1; i < bars.length; i++) {
       const cur = bars[i];
       let j;
-      for (j = i - 1; j >= 0 && bars[j] > cur; j--) {
+      for (j = i - 1; j >= 0 && bars[j].value > cur.value; j--) {
         bars[j + 1] = bars[j];
-        yield { access: [i, j], sound: j };
+        yield { access: [i, j], sound: [j] };
       }
       bars[j + 1] = cur;
-      yield { access: [i, j + 1], sound: i };
+      yield { access: [i, j + 1], sound: [i] };
     }
   }
 
-  type SortGenerator = Generator<{ access: number[]; sound: number }>;
-
-  function* mergeSort(
-    bars: number[],
-    l = 0,
-    r = bars.length - 1,
-  ): SortGenerator {
+  function* mergeSort(bars: Bar[], l = 0, r = bars.length - 1): SortGenerator {
     if (l >= r) return;
 
     const mid = Math.floor((l + r) / 2);
@@ -180,7 +187,12 @@
     yield* merge(bars, l, mid, r);
   }
 
-  function* merge(bars: number[], l: number, mid: number, r: number) {
+  function* merge(
+    bars: Bar[],
+    l: number,
+    mid: number,
+    r: number,
+  ): SortGenerator {
     const left = bars.slice(l, mid + 1);
     const right = bars.slice(mid + 1, r + 1);
     let i = 0,
@@ -188,8 +200,8 @@
       k = l;
 
     while (i < left.length && j < right.length) {
-      yield { access: [l + i, mid + 1 + j], sound: k };
-      if (left[i] <= right[j]) {
+      yield { access: [l + i, mid + 1 + j], sound: [k] };
+      if (left[i].value <= right[j].value) {
         bars[k++] = left[i++];
       } else {
         bars[k++] = right[j++];
@@ -198,16 +210,16 @@
 
     while (i < left.length) {
       bars[k++] = left[i++];
-      yield { access: [k - 1], sound: k - 1 };
+      yield { access: [k - 1], sound: [k - 1] };
     }
 
     while (j < right.length) {
       bars[k++] = right[j++];
-      yield { access: [k - 1], sound: k - 1 };
+      yield { access: [k - 1], sound: [k - 1] };
     }
   }
 
-  function run(step: Generator<{ access: number[]; sound: number }>) {
+  function run(step: SortGenerator) {
     let lastTime = performance.now();
     let acc = 0;
 
@@ -221,7 +233,7 @@
       acc += dt;
 
       while (acc >= state.delay && !next.done) {
-        tone(bars[next.value.sound], bars.length);
+        tone(bars[next.value.sound[0]]);
         acc -= state.delay;
         next = step.next();
       }
@@ -247,10 +259,10 @@
 
   function oddsEvens() {
     return bars
-      .sort((a, b) => a - b)
-      .reduce<[number[], number[]]>(
+      .sort((a, b) => a.value - b.value)
+      .reduce<[Bar[], Bar[]]>(
         ([odds, evens], b) => {
-          if (b % 2 === 0) evens.push(b);
+          if (b.value % 2 === 0) evens.push(b);
           else odds.push(b);
           return [odds, evens];
         },
@@ -260,7 +272,7 @@
 
   function reverse() {
     state.paused = true;
-    bars.sort((a, b) => a - b).reverse();
+    bars.sort((a, b) => a.value - b.value).reverse();
     render();
   }
 
@@ -294,8 +306,8 @@
 
   function setSorter(k: string) {
     if (!(k in sorters)) return;
-    state.paused = true;
     state.sorter = k;
+    state.paused = true;
   }
 </script>
 
