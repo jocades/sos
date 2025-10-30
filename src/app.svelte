@@ -35,39 +35,56 @@
     };
   }
 
-  const state = $state(createState(currentURL()));
+  const theme = $state({
+    mode: "dark",
+    colors: {
+      stale: "gray",
+      read: "skyblue",
+      write: "orange",
+    },
+  });
+
+  const s = $state(createState(currentURL()));
 
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;
+
+  function getColors() {
+    const ss = getComputedStyle(document.querySelector(":root")!);
+    theme.colors.stale = ss.getPropertyValue("--color-neutral-content");
+    theme.colors.read = ss.getPropertyValue("--color-info");
+    theme.colors.write = ss.getPropertyValue("--color-warning");
+  }
 
   onMount(() => {
     ctx = canvas.getContext("2d")!;
     if (!ctx) throw new Error("Canvas2D not supported");
 
     document.addEventListener("pointerdown", setupAudio, { once: true });
+    getColors();
   });
 
   $effect(() => {
-    setBars(createBars(state.size));
+    setBars(createBars(s.size));
     shuffle();
     // render();
 
-    const timeout = setTimeout(() => updateURL("size", state.size), 200);
+    const timeout = setTimeout(() => updateURL("size", s.size), 200);
     return () => clearTimeout(timeout);
   });
 
   $effect(() => {
-    updateURL("sorter", state.sorter);
+    updateURL("sorter", s.sorter);
   });
 
   $effect(() => {
-    const delay = state.delay;
+    const delay = s.delay;
     const timeout = setTimeout(() => updateURL("delay", delay), 200);
     return () => clearTimeout(timeout);
   });
 
   function shuffle() {
-    state.paused = true;
+    s.paused = true;
     for (let i = bars.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       swap(bars, i, j);
@@ -83,9 +100,9 @@
 
     for (let i = 0; i < bars.length; i++) {
       const barHeight = (bars[i].value / bars.length) * h;
-      ctx.fillStyle = "gray";
-      if (read?.includes(i)) ctx.fillStyle = "skyblue";
-      if (write?.includes(i)) ctx.fillStyle = "orange";
+      ctx.fillStyle = theme.colors.stale;
+      if (read?.includes(i)) ctx.fillStyle = theme.colors.read;
+      if (write?.includes(i)) ctx.fillStyle = theme.colors.write;
       ctx.fillRect(i * (barWidth + gap), h - barHeight, barWidth, barHeight);
     }
   }
@@ -97,21 +114,21 @@
     let next = step.next();
 
     const animate = (now: number) => {
-      if (state.paused) return;
+      if (s.paused) return;
 
       const dt = now - lastTime;
       lastTime = now;
       acc += dt;
 
-      while (acc >= state.delay && !next.done) {
+      while (acc >= s.delay && !next.done) {
         tone(bars, next.value.sound);
-        acc -= state.delay;
+        acc -= s.delay;
         next = step.next();
       }
 
       if (next.done) {
         render();
-        state.paused = true;
+        s.paused = true;
         return;
       }
 
@@ -123,8 +140,8 @@
   }
 
   $effect(() => {
-    if (state.paused) return;
-    run(getSorter(state.sorter)(bars));
+    if (s.paused) return;
+    run(getSorter(s.sorter)(bars));
   });
 
   export function oddsEvens() {
@@ -141,20 +158,20 @@
   }
 
   function reverse() {
-    state.paused = true;
+    s.paused = true;
     bars.sort((a, b) => a.value - b.value).reverse();
     render();
   }
 
   function valley() {
-    state.paused = true;
+    s.paused = true;
     const [odds, evens] = oddsEvens();
     setBars([...odds.reverse(), ...evens]);
     render();
   }
 
   function mountain() {
-    state.paused = true;
+    s.paused = true;
     const [odds, evens] = oddsEvens();
     setBars([...odds, ...evens.reverse()]);
     render();
@@ -166,57 +183,99 @@
 
   function setSorter(k: string) {
     if (!(k in sorters)) return;
-    state.sorter = k;
-    state.paused = true;
+    s.sorter = k;
+    s.paused = true;
   }
 </script>
 
-<main class="flex flex-col h-screen w-screen p-4 justify-between">
-  <section class="flex gap-4 items-center">
-    <select class="select cursor-pointer">
-      {#each Object.keys(sorters) as k}
-        <option selected={state.sorter == k} onclick={() => setSorter(k)}>
-          {k[0].toUpperCase() + k.substring(1)}
-        </option>
-      {/each}
-    </select>
-    <button class="btn" onclick={() => (state.paused = !state.paused)}>
-      {#if state.paused}Start{:else}Stop{/if}
-    </button>
-    <button class="btn">Step</button>
-    <button class="btn" onclick={() => shuffle()}>Shuffle</button>
-    <button class="btn" onclick={() => reverse()}>Reverse</button>
-    <button class="btn" onclick={() => valley()}> Valley </button>
-    <button class="btn" onclick={() => mountain()}>Mountain</button>
-    <div class="flex flex-grow items-center gap-4">
-      <input
-        type="range"
-        class="range"
-        min="10"
-        max="1000"
-        step="10"
-        bind:value={state.size}
-        disabled={!state.paused}
-      />
-      <span>{state.size}</span>
-    </div>
-    <div class="flex flex-grow items-center gap-4">
-      <input
-        type="range"
-        class="range"
-        min="2"
-        max="100"
-        step="2"
-        bind:value={state.delay}
-      />
-      <span>{state.delay}ms</span>
-    </div>
-  </section>
-  <canvas
-    class="border"
-    bind:this={canvas}
-    width={window.innerWidth * 0.8}
-    height={window.innerHeight * 0.5}
-  ></canvas>
-  <footer></footer>
+<main class="flex flex-col h-screen w-screen p-4">
+  <header
+    class="sticky top-0 flex items-center border-b border-base-300 pb-4 justify-between"
+  >
+    <span class="text-2xl font-bold leading-tight">Sound of Sorting</span>
+    <label class="swap swap-rotate">
+      <input type="checkbox" class="theme-controller" value="nord" />
+      <svg
+        class="swap-off h-4 w-4 fill-current"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+      >
+        <path
+          d="M5.64,17l-.71.71a1,1,0,0,0,0,1.41,1,1,0,0,0,1.41,0l.71-.71A1,1,0,0,0,5.64,17ZM5,12a1,1,0,0,0-1-1H3a1,1,0,0,0,0,2H4A1,1,0,0,0,5,12Zm7-7a1,1,0,0,0,1-1V3a1,1,0,0,0-2,0V4A1,1,0,0,0,12,5ZM5.64,7.05a1,1,0,0,0,.7.29,1,1,0,0,0,.71-.29,1,1,0,0,0,0-1.41l-.71-.71A1,1,0,0,0,4.93,6.34Zm12,.29a1,1,0,0,0,.7-.29l.71-.71a1,1,0,1,0-1.41-1.41L17,5.64a1,1,0,0,0,0,1.41A1,1,0,0,0,17.66,7.34ZM21,11H20a1,1,0,0,0,0,2h1a1,1,0,0,0,0-2Zm-9,8a1,1,0,0,0-1,1v1a1,1,0,0,0,2,0V20A1,1,0,0,0,12,19ZM18.36,17A1,1,0,0,0,17,18.36l.71.71a1,1,0,0,0,1.41,0,1,1,0,0,0,0-1.41ZM12,6.5A5.5,5.5,0,1,0,17.5,12,5.51,5.51,0,0,0,12,6.5Zm0,9A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"
+        />
+      </svg>
+      <svg
+        class="swap-on h-4 w-4 fill-current"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+      >
+        <path
+          d="M21.64,13a1,1,0,0,0-1.05-.14,8.05,8.05,0,0,1-3.37.73A8.15,8.15,0,0,1,9.08,5.49a8.59,8.59,0,0,1,.25-2A1,1,0,0,0,8,2.36,10.14,10.14,0,1,0,22,14.05,1,1,0,0,0,21.64,13Zm-9.5,6.69A8.14,8.14,0,0,1,7.08,5.22v.27A10.15,10.15,0,0,0,17.22,15.63a9.79,9.79,0,0,0,2.1-.22A8.11,8.11,0,0,1,12.14,19.73Z"
+        />
+      </svg>
+    </label>
+  </header>
+  <div class="flex flex-col flex-grow justify-between">
+    <section class="flex gap-4 items-center pt-8 justify-between">
+      <select class="select cursor-pointer max-w-48">
+        {#each Object.keys(sorters) as k}
+          <option selected={s.sorter == k} onclick={() => setSorter(k)}>
+            {k[0].toUpperCase() + k.substring(1)}
+          </option>
+        {/each}
+      </select>
+      <div class="join">
+        <button
+          class={["btn join-item w-16", s.paused ? "btn-success" : "btn-error"]}
+          onclick={() => (s.paused = !s.paused)}
+        >
+          {#if s.paused}Start{:else}Stop{/if}
+        </button>
+        <button class="btn btn-soft join-item">Step</button>
+      </div>
+      <div class="join">
+        <button class="btn btn-soft join-item" onclick={shuffle}>
+          Shuffle
+        </button>
+        <button class="btn btn-soft join-item" onclick={reverse}>
+          Reverse
+        </button>
+        <button class="btn btn-soft join-item" onclick={valley}>
+          Valley
+        </button>
+        <button class="btn btn-soft join-item" onclick={mountain}>
+          Mountain
+        </button>
+      </div>
+      <div class="flex flex-grow items-center gap-2.5">
+        <input
+          type="range"
+          class="range"
+          min="10"
+          max="1000"
+          step="10"
+          bind:value={s.size}
+          disabled={!s.paused}
+        />
+        <span>{s.size}</span>
+      </div>
+      <div class="flex flex-grow items-center gap-4">
+        <input
+          type="range"
+          class="range"
+          min="2"
+          max="100"
+          step="2"
+          bind:value={s.delay}
+        />
+        <span>{s.delay}ms</span>
+      </div>
+    </section>
+    <canvas
+      bind:this={canvas}
+      width={window.innerWidth * 0.8}
+      height={window.innerHeight * 0.5}
+    ></canvas>
+    <footer></footer>
+  </div>
 </main>
