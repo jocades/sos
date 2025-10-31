@@ -1,48 +1,51 @@
 import { customOscillators } from "web-audio-oscillators"
 import type { Bar } from "./types"
+import { createArray } from "./util"
 
 const audioCtx = new AudioContext()
 
-let osc1: OscillatorNode
-let gain1: GainNode
+const channels: { osc: OscillatorNode; gain: GainNode }[] = []
 
-let osc2: OscillatorNode
-let gain2: GainNode
+function triangle() {
+  const osc = audioCtx.createOscillator()
+  const real = createArray(8192, () => 0)
+  const imag = real.map((_, i) => {
+    if (i === 0) return 0
+    return (8 * Math.sin((i * Math.PI) / 2)) / Math.pow(Math.PI * i, 2)
+  })
+  const wave = audioCtx.createPeriodicWave(Float32Array.from(real), Float32Array.from(imag))
+  osc.setPeriodicWave(wave)
+  return osc
+}
 
-export async function setupAudio() {
-  osc1 = customOscillators.triangle(audioCtx)
-  gain1 = audioCtx.createGain()
-  gain1.gain.value = 0
-  osc1.connect(gain1).connect(audioCtx.destination)
-  osc1.start()
+function createChannel() {
+  const osc = triangle()
+  const gain = audioCtx.createGain()
+  gain.gain.value = 0
+  osc.connect(gain).connect(audioCtx.destination)
+  osc.start()
+  return { osc, gain }
+}
 
-  osc2 = customOscillators.triangle(audioCtx)
-  gain2 = audioCtx.createGain()
-  gain2.gain.value = 0
-  osc2.connect(gain2).connect(audioCtx.destination)
-  osc2.start()
-
+export function setupAudio() {
+  channels.push(createChannel())
+  channels.push(createChannel())
   console.log("Start oscillators")
+}
+
+function play(ch: 1 | 2, freq: number, when: number, duration: number) {
+  const { osc, gain } = channels[ch - 1]
+  osc.frequency.setValueAtTime(freq, when)
+  gain.gain.cancelScheduledValues(when)
+  gain.gain.setValueAtTime(0.25, when)
+  // gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
+  gain.gain.setValueAtTime(0, when + duration)
 }
 
 export function tone(bars: Bar[], [i, j]: number[], duration = 0.05) {
   if (audioCtx.state !== "running") return
 
   const now = audioCtx.currentTime
-
-  if (i !== undefined) {
-    osc1.frequency.setValueAtTime(bars[i].freq, now)
-    gain1.gain.cancelScheduledValues(now)
-    gain1.gain.setValueAtTime(0.25, now)
-    // gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    gain1.gain.setValueAtTime(0, now + duration)
-  }
-
-  if (j !== undefined) {
-    osc2.frequency.setValueAtTime(bars[j].freq, now)
-    gain2.gain.cancelScheduledValues(now)
-    gain2.gain.setValueAtTime(0.25, now)
-    // gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    gain2.gain.setValueAtTime(0, now + duration)
-  }
+  if (i !== undefined) play(1, bars[i].freq, now, duration)
+  if (j !== undefined) play(2, bars[j].freq, now, duration)
 }

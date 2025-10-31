@@ -11,3 +11,7 @@ export function updateURL(k: string, v: string | number) {
 export function swap<T>(a: T[], i: number, j: number) {
   ;[a[i], a[j]] = [a[j], a[i]]
 }
+
+export function createArray<T>(length: number, cb: (index: number) => T) {
+  return Array.from({ length }, (_, i) => cb(i))
+}

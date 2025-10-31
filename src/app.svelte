@@ -24,11 +24,11 @@
     if (size < 10 || size > 1000) size = 50;
 
     let delay = Number(url.searchParams.get("delay") ?? 10);
-    if (delay < 2 || delay > 100) delay = 10;
+    if (delay < 2 || delay > 500) delay = 10;
 
     return {
       paused: true,
-      sorter: key,
+      sorterKey: key,
       order: "shuffle",
       size,
       delay,
@@ -74,7 +74,7 @@
   });
 
   $effect(() => {
-    updateURL("sorter", s.sorter);
+    updateURL("sorter", s.sorterKey);
   });
 
   $effect(() => {
@@ -112,28 +112,47 @@
     let acc = 0;
 
     let next = step.next();
+    if (!next.done) {
+      tone(bars, next.value.sound);
+      render(next.value.read, next.value.write);
+    }
 
     const animate = (now: number) => {
       if (s.paused) return;
+
+      if (next.done) {
+        s.paused = true;
+        render();
+        return;
+      }
 
       const dt = now - lastTime;
       lastTime = now;
       acc += dt;
 
-      while (acc >= s.delay && !next.done) {
+      if (acc >= s.delay && !next.done) {
         tone(bars, next.value.sound);
-        acc -= s.delay;
+        render(next.value.read, next.value.write);
         next = step.next();
+        acc = 0;
+        // requestAnimationFrame()
       }
 
-      if (next.done) {
-        render();
-        s.paused = true;
-        return;
-      }
-
-      render(next.value.read, next.value.write);
       requestAnimationFrame(animate);
+      // while (acc >= s.delay && !next.done) {
+      //   tone(bars, next.value.sound);
+      //   acc -= s.delay;
+      //   next = step.next();
+      // }
+      //
+      // if (next.done) {
+      //   render();
+      //   s.paused = true;
+      //   return;
+      // }
+
+      // render(next.value.read, next.value.write);
+      // requestAnimationFrame(animate);
     };
 
     requestAnimationFrame(animate);
@@ -141,10 +160,10 @@
 
   $effect(() => {
     if (s.paused) return;
-    run(getSorter(s.sorter)(bars));
+    run(getSorter(s.sorterKey)(bars));
   });
 
-  export function oddsEvens() {
+  function oddsEvens() {
     return bars
       .sort((a, b) => a.value - b.value)
       .reduce<[Bar[], Bar[]]>(
@@ -183,7 +202,7 @@
 
   function setSorter(k: string) {
     if (!(k in sorters)) return;
-    s.sorter = k;
+    s.sorterKey = k;
     s.paused = true;
   }
 </script>
@@ -219,7 +238,7 @@
     <section class="flex gap-4 items-center pt-8 justify-between">
       <select class="select cursor-pointer max-w-48">
         {#each Object.keys(sorters) as k}
-          <option selected={s.sorter == k} onclick={() => setSorter(k)}>
+          <option selected={s.sorterKey == k} onclick={() => setSorter(k)}>
             {k[0].toUpperCase() + k.substring(1)}
           </option>
         {/each}
@@ -264,7 +283,7 @@
           type="range"
           class="range"
           min="2"
-          max="100"
+          max="500"
           step="2"
           bind:value={s.delay}
         />
