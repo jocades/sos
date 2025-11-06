@@ -4,7 +4,7 @@
   import { currentURL, updateURL, swap } from "./lib/util";
   import { setupAudio, tone } from "./lib/audio";
   import type { Bar, SortGenerator } from "./lib/types";
-  import { bars, createBars, setBars } from "./lib/bars";
+  // import { bars, createBars, setBars } from "./lib/bars";
 
   const orders = {
     shuffle,
@@ -56,18 +56,45 @@
     theme.colors.write = ss.getPropertyValue("--color-warning");
   }
 
+  let audioActive = false;
   onMount(() => {
     ctx = canvas.getContext("2d")!;
     if (!ctx) throw new Error("Canvas2D not supported");
 
-    document.addEventListener("pointerdown", setupAudio, { once: true });
+    document.addEventListener(
+      "pointerdown",
+      () => {
+        setupAudio();
+        audioActive = true;
+      },
+      { once: true },
+    );
+
     getColors();
+
+    document.addEventListener("keydown", (e) => {
+      if (audioActive && e.key == "ArrowRight") {
+        step();
+      }
+    });
   });
 
+  let bars: Bar[] = [];
+
+  // export function setBars(newBars: Bar[]) {
+  //   bars = newBars;
+  // }
+
+  export function createBars(length: number) {
+    return Array.from({ length }, (_, i) => ({
+      value: i + 1,
+      freq: 200 + ((i + 1) / length) * 800,
+    }));
+  }
+
   $effect(() => {
-    setBars(createBars(s.size));
+    bars = createBars(s.size);
     shuffle();
-    // render();
 
     const timeout = setTimeout(() => updateURL("size", s.size), 200);
     return () => clearTimeout(timeout);
@@ -83,13 +110,36 @@
     return () => clearTimeout(timeout);
   });
 
-  function shuffle() {
+  let stepper: SortGenerator;
+  $effect(() => {
+    stepper = getSorter(s.sorterKey)(bars);
+    console.log(stepper);
+  });
+
+  function reset() {
     s.paused = true;
+    stepper = getSorter(s.sorterKey)(bars);
+    render();
+  }
+
+  function step() {
+    const next = stepper.next();
+
+    if (next.done) {
+      reset();
+      return;
+    }
+
+    tone(bars, next.value.sound);
+    render(next.value.read, next.value.write);
+  }
+
+  function shuffle() {
     for (let i = bars.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       swap(bars, i, j);
     }
-    render();
+    reset();
   }
 
   const gap = 0.2;
@@ -107,52 +157,48 @@
     }
   }
 
-  function run(step: SortGenerator) {
+  interface SortStep {
+    read: number[];
+    write?: number[];
+    sound: number[];
+  }
+
+  function run() {
+    let next = stepper.next();
+
+    const step = () => {
+      tone(bars, next.value.sound);
+      render(next.value.read, next.value.write);
+      next = stepper.next();
+    };
+
+    if (!next.done) {
+      step();
+    }
+
     let lastTime = performance.now();
     let acc = 0;
 
-    let next = step.next();
-    if (!next.done) {
-      tone(bars, next.value.sound);
-      render(next.value.read, next.value.write);
-    }
-
     const animate = (now: number) => {
       if (s.paused) return;
-
-      if (next.done) {
-        s.paused = true;
-        render();
-        return;
-      }
 
       const dt = now - lastTime;
       lastTime = now;
       acc += dt;
 
-      if (acc >= s.delay && !next.done) {
+      if (next.done) {
+        reset();
+        return;
+      }
+
+      if (acc >= s.delay) {
         tone(bars, next.value.sound);
         render(next.value.read, next.value.write);
-        next = step.next();
         acc = 0;
-        // requestAnimationFrame()
+        next = stepper.next();
       }
 
       requestAnimationFrame(animate);
-      // while (acc >= s.delay && !next.done) {
-      //   tone(bars, next.value.sound);
-      //   acc -= s.delay;
-      //   next = step.next();
-      // }
-      //
-      // if (next.done) {
-      //   render();
-      //   s.paused = true;
-      //   return;
-      // }
-
-      // render(next.value.read, next.value.write);
-      // requestAnimationFrame(animate);
     };
 
     requestAnimationFrame(animate);
@@ -160,7 +206,7 @@
 
   $effect(() => {
     if (s.paused) return;
-    run(getSorter(s.sorterKey)(bars));
+    run();
   });
 
   function oddsEvens() {
@@ -177,23 +223,20 @@
   }
 
   function reverse() {
-    s.paused = true;
     bars.sort((a, b) => a.value - b.value).reverse();
-    render();
+    reset();
   }
 
   function valley() {
-    s.paused = true;
     const [odds, evens] = oddsEvens();
-    setBars([...odds.reverse(), ...evens]);
-    render();
+    bars = [...odds.reverse(), ...evens];
+    reset();
   }
 
   function mountain() {
-    s.paused = true;
     const [odds, evens] = oddsEvens();
-    setBars([...odds, ...evens.reverse()]);
-    render();
+    bars = [...odds, ...evens.reverse()];
+    reset();
   }
 
   function getSorter(k: string) {
@@ -250,7 +293,7 @@
         >
           {#if s.paused}Start{:else}Stop{/if}
         </button>
-        <button class="btn btn-soft join-item">Step</button>
+        <button class="btn btn-soft join-item" onclick={step}>Step</button>
       </div>
       <div class="join">
         <button class="btn btn-soft join-item" onclick={shuffle}>
