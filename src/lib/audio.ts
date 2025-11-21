@@ -1,6 +1,4 @@
-import { customOscillators } from "web-audio-oscillators"
 import type { Bar } from "./types"
-import { createArray } from "./util"
 
 const audioCtx = new AudioContext()
 
@@ -8,7 +6,7 @@ const channels: { osc: OscillatorNode; gain: GainNode }[] = []
 
 function triangle() {
   const osc = audioCtx.createOscillator()
-  const real = createArray(8192, () => 0)
+  const real = Array.from({ length: 8192 }, () => 0)
   const imag = real.map((_, i) => {
     if (i === 0) return 0
     return (8 * Math.sin((i * Math.PI) / 2)) / Math.pow(Math.PI * i, 2)

@@ -4,7 +4,6 @@
   import { currentURL, updateURL, swap } from "./lib/util";
   import { setupAudio, tone } from "./lib/audio";
   import type { Bar, SortGenerator } from "./lib/types";
-  // import { bars, createBars, setBars } from "./lib/bars";
 
   const orders = {
     shuffle,
@@ -81,11 +80,7 @@
 
   let bars: Bar[] = [];
 
-  // export function setBars(newBars: Bar[]) {
-  //   bars = newBars;
-  // }
-
-  export function createBars(length: number) {
+  function createBars(length: number) {
     return Array.from({ length }, (_, i) => ({
       value: i + 1,
       freq: 200 + ((i + 1) / length) * 800,
@@ -96,7 +91,7 @@
     bars = createBars(s.size);
     shuffle();
 
-    const timeout = setTimeout(() => updateURL("size", s.size), 200);
+    const timeout = setTimeout(() => updateURL("size", s.size), 500);
     return () => clearTimeout(timeout);
   });
 
@@ -106,14 +101,13 @@
 
   $effect(() => {
     const delay = s.delay;
-    const timeout = setTimeout(() => updateURL("delay", delay), 200);
+    const timeout = setTimeout(() => updateURL("delay", delay), 500);
     return () => clearTimeout(timeout);
   });
 
   let stepper: SortGenerator;
   $effect(() => {
     stepper = getSorter(s.sorterKey)(bars);
-    console.log(stepper);
   });
 
   function reset() {
@@ -157,12 +151,6 @@
     }
   }
 
-  interface SortStep {
-    read: number[];
-    write?: number[];
-    sound: number[];
-  }
-
   function run() {
     let next = stepper.next();
 
@@ -192,10 +180,8 @@
       }
 
       if (acc >= s.delay) {
-        tone(bars, next.value.sound);
-        render(next.value.read, next.value.write);
+        step();
         acc = 0;
-        next = stepper.next();
       }
 
       requestAnimationFrame(animate);
